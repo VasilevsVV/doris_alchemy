@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doris-alchemy"
+authors = [
+    {name = "vtsiura", email = "morfey.rulit@gmail.com"}
+]
+maintainers = [
+    {name = "vtsiura", email = "morfey.rulit@gmail.com"}
+]
+
+version = "0.2.8"
+
+description = "Apache Doris dialect for SQLAlchemy"
+readme = "README.md"
+requires-python = ">=3.10.12"
+keywords = ["Apache Doris", "SQLAlchemy"]
+license = {text = "Apache Software License"}
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+    "sqlalchemy>=2.0"
+    ]
+
+[project.urls]
+Homepage = "https://github.com/VasilevsVV/doris-alchemy"
+Issues = "https://github.com/VasilevsVV/doris-alchemy/issues"
+
+[project.optional-dependencies]
+mysqldb = ["mysqlclient>=2.1.0"]
+pymysql = ["pymysql"]
+
+
+[project.entry-points."sqlalchemy.dialects"]
+doris = "doris_alchemy.dialect:DorisDialect"
+'doris.pymysql' = "doris_alchemy.dialect:DorisDialect"
+'doris.mysqldb' = "doris_alchemy.dialect:DorisDialect_mysqldb"
