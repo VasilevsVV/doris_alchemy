@@ -25,6 +25,7 @@ from sqlalchemy import Boolean, Dialect, Numeric, Integer, Float, exc
 from sqlalchemy.dialects.mysql.base import MySQLTypeCompiler
 from sqlalchemy.sql import sqltypes
 from sqlalchemy.sql.type_api import TypeEngine
+import base64
 # import sqlalchemy.types as sqltypes
 
 from doris_alchemy.util import ensure_sequence
@@ -68,11 +69,24 @@ class AGG_STATE(Numeric):  # pylint: disable=no-init
 class BLOB(sqltypes.BLOB):
     __visit_name__ = 'DORIS_BLOB'
     
+    def __init__(self, length: Optional[int] = None,
+                 encoding: str = 'utf-8'):
+        self._encoding = encoding
+        super().__init__(length)
+    
     def bind_processor(self, dialect):
-        return super().bind_processor(dialect)
+        def __processor(value: bytes) -> str:
+            assert isinstance(value, bytes)
+            res = base64.b85encode(value).decode(self._encoding)
+            return res  
+        return __processor
     
     def result_processor(self, dialect, coltype):
-        return super().result_processor(dialect, coltype)
+        def __processor(value: str) -> bytes:
+            assert isinstance(value, str)
+            res = base64.b85decode(value)
+            return res
+        return __processor
 
 
 class STRING(sqltypes.Text):
@@ -116,6 +130,62 @@ class STRUCT(TypeEngine):  # pylint: disable=no-init
     @TypeEngine.python_type.getter
     def python_type(self) -> Optional[Type[Any]]:
         return None
+
+
+
+class DorisTypeCompiler(MySQLTypeCompiler):
+    def visit_DORIS_BOOLEAN(self, type_, **kw): # type: ignore
+        return "BOOLEAN"
+    
+    def visit_large_binary(self, type_, **kw):
+        return self.visit_DORIS_BLOB(type_)
+    
+    def visit_DORIS_BLOB(self, type_, **kw):
+        return "STRING"
+    
+    def visit_NUMERIC(self, type_, **kw):
+        return self.visit_DECIMAL(type_, **kw)
+
+    def _visit_enumerated_values(self, name, type_, enumerated_values: Sequence[str]):
+        quoted_enums = []
+        for e in enumerated_values:
+            if self.dialect.identifier_preparer._double_percents:
+                e = e.replace("%", "%%")
+            quoted_enums.append("'%s'" % e.replace("'", "''"))
+
+        max_length = 0
+        for e in quoted_enums:
+            assert isinstance(e, str)
+            if len(e) > max_length:
+                max_length = len(e)
+
+        if len(enumerated_values) > 0 and max_length > 0:
+            return self._extend_string(type_, {}, "VARCHAR(%d)" % max_length)
+        else:
+            raise exc.CompileError(
+                f'ENUM requires more than one Value with length > 0. Got: {enumerated_values}'
+            )
+    
+    def visit_BITMAP(self, type_):
+        return 'BITMAP'
+    
+    def visit_DORIS_ARRAY(self, type_: ARRAY):
+        return f'ARRAY <{type_.item_type.compile()}>'
+    
+    
+    def visit_TEXT(self, type_, **kw):
+        res = self.visit_DORIS_STRING(type_, **kw)
+        print(res)
+        return res
+    
+    def visit_string(self, type_, **kw):
+        return self.visit_DORIS_STRING(type_, **kw)
+    
+    def visit_DORIS_STRING(self, type_: STRING, **kw):
+        if type_.length is not None:
+            return self._extend_string(type_, {}, "STRING(%d)" % type_.length)
+        else:
+            return self._extend_string(type_, {}, "STRING")
 
 
 _type_map = {
@@ -217,56 +287,3 @@ class RANDOM(RenderedMixin):
 # ============================================================================
 #           TYPE COMPILER
 
-class DorisTypeCompiler(MySQLTypeCompiler):
-    def visit_DORIS_BOOLEAN(self, type_, **kw): # type: ignore
-        return "BOOLEAN"
-    
-    def visit_large_binary(self, type_, **kw):
-        return self.visit_DORIS_BLOB(type_)
-    
-    def visit_DORIS_BLOB(self, type_, **kw):
-        return "STRING"
-    
-    def visit_NUMERIC(self, type_, **kw):
-        return self.visit_DECIMAL(type_, **kw)
-
-    def _visit_enumerated_values(self, name, type_, enumerated_values: Sequence[str]):
-        quoted_enums = []
-        for e in enumerated_values:
-            if self.dialect.identifier_preparer._double_percents:
-                e = e.replace("%", "%%")
-            quoted_enums.append("'%s'" % e.replace("'", "''"))
-
-        max_length = 0
-        for e in quoted_enums:
-            assert isinstance(e, str)
-            if len(e) > max_length:
-                max_length = len(e)
-
-        if len(enumerated_values) > 0 and max_length > 0:
-            return self._extend_string(type_, {}, "VARCHAR(%d)" % max_length)
-        else:
-            raise exc.CompileError(
-                f'ENUM requires more than one Value with length > 0. Got: {enumerated_values}'
-            )
-    
-    def visit_BITMAP(self, type_):
-        return 'BITMAP'
-    
-    def visit_DORIS_ARRAY(self, type_: ARRAY):
-        return f'ARRAY <{type_.item_type.compile()}>'
-    
-    
-    def visit_TEXT(self, type_, **kw):
-        res = self.visit_DORIS_STRING(type_, **kw)
-        print(res)
-        return res
-    
-    def visit_string(self, type_, **kw):
-        return self.visit_DORIS_STRING(type_, **kw)
-    
-    def visit_DORIS_STRING(self, type_: STRING, **kw):
-        if type_.length is not None:
-            return self._extend_string(type_, {}, "STRING(%d)" % type_.length)
-        else:
-            return self._extend_string(type_, {}, "STRING")
