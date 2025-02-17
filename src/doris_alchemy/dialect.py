@@ -135,7 +135,7 @@ class DorisDDLCompiler(MySQLDDLCompiler):
             if 'UNIQUE_KEY' not in opts:
                 opts['UNIQUE_KEY'] = pk_key
             if 'DISTRIBUTED_BY' not in opts:
-                opts['DISTRIBUTED_BY'] = RANDOM()
+                opts['DISTRIBUTED_BY'] = HASH(pk_key)
                 
             
         sorted_opts = topological.sort(TABLE_PROPERTIES_SORT_TUPLES, opts)
