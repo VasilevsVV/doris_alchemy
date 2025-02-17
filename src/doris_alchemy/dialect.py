@@ -36,7 +36,7 @@ from sqlalchemy.schema import CreateTable, SchemaConst
 
 from doris_alchemy.const import TABLE_KEY_OPTIONS, TABLE_PROPERTIES_SORT_TUPLES
 
-from doris_alchemy.datatype import BLOB, HASH, RANDOM, STRING, DorisTypeCompiler, RenderedMixin
+from doris_alchemy.datatype import BLOB, HASH, RANDOM, RANGE, STRING, DorisTypeCompiler, RenderedMixin
 from doris_alchemy.util import format_properties, join_args_with_quote
 
 
@@ -135,7 +135,7 @@ class DorisDDLCompiler(MySQLDDLCompiler):
             if 'UNIQUE_KEY' not in opts:
                 opts['UNIQUE_KEY'] = pk_key
             if 'DISTRIBUTED_BY' not in opts:
-                opts['DISTRIBUTED_BY'] = HASH(pk_key)
+                opts['DISTRIBUTED_BY'] = RANDOM()
                 
             
         sorted_opts = topological.sort(TABLE_PROPERTIES_SORT_TUPLES, opts)
@@ -144,7 +144,8 @@ class DorisDDLCompiler(MySQLDDLCompiler):
             __compiled = self.__compile_table_arg(opt, __arg, table.name)
             if __compiled:
                 table_opts.append(__compiled)
-        return "\n".join(table_opts)
+        text = "\n".join(table_opts)
+        return text
     
     def visit_create_column(self, create, first_pk=False, **kw):
         column = create.element
