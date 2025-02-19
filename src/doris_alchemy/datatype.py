@@ -74,16 +74,20 @@ class BLOB(sqltypes.BLOB):
         self._encoding = encoding
         super().__init__(length)
     
-    def bind_processor(self, dialect):
+    def bind_processor(self, dialect: Dialect):
+        if dialect.name != 'doris':
+            return super().bind_processor(dialect)
         def __processor(value: bytes) -> str:
             assert isinstance(value, bytes)
             res = base64.b85encode(value).decode(self._encoding)
             return res  
         return __processor
     
+    
     def result_processor(self, dialect, coltype):
+        if dialect.name != 'doris':
+            return super().result_processor(dialect, coltype)
         def __processor(value: str) -> bytes:
-            assert isinstance(value, str)
             res = base64.b85decode(value)
             return res
         return __processor
