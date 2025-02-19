@@ -183,7 +183,6 @@ class DorisTypeCompiler(MySQLTypeCompiler):
     
     def visit_TEXT(self, type_, **kw):
         res = self.visit_DORIS_STRING(type_, **kw)
-        print(res)
         return res
     
     def visit_string(self, type_, **kw):
