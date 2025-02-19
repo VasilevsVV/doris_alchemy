@@ -106,13 +106,17 @@ class ARRAY(sqltypes.ARRAY, Generic[T]):  # pylint: disable=no-init
     __visit_name__ = "DORIS_ARRAY"
     
     def bind_processor(self, dialect: Dialect) -> Callable[[Any], str] | None: # type: ignore
+        if dialect.name != 'doris':
+            return super().bind_processor(dialect)
         def __processor(value: list) -> str:
             assert isinstance(value, Iterable), f'ARRAY value must be Iterable. Got: {value}'
             return json.dumps(value)
         return __processor
     
     
-    def result_processor(self, dialect: Dialect, coltype: object) -> Callable[[str], list] | None: # type: ignore
+    def result_processor(self, dialect: Dialect, coltype: object): # type: ignore
+        if dialect.name != 'doris':
+            return super().result_processor(dialect, coltype)
         def __processor(value: str):
             res = json.loads(value)
             assert isinstance(res, list)
