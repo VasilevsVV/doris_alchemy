@@ -21,7 +21,7 @@ import json
 import logging
 import re
 from typing import Callable, Generic, Iterable, Optional, List, Any, Sequence, Type, Dict, TypeVar
-from sqlalchemy import Boolean, Dialect, Numeric, Integer, Float, exc
+from sqlalchemy import Boolean, Dialect, Numeric, Integer, Float, String, exc
 from sqlalchemy.dialects.mysql.base import MySQLTypeCompiler
 from sqlalchemy.sql import sqltypes
 from sqlalchemy.sql.type_api import TypeEngine
@@ -95,6 +95,13 @@ class BLOB(sqltypes.BLOB):
 
 class STRING(sqltypes.Text):
     __visit_name__ = 'DORIS_STRING'
+    
+    def __init__(self, 
+                 length: int | None = None,
+                 collation: str | None = None,
+                 as_varchar: bool = False):
+        self._as_varchar = as_varchar
+        super().__init__(length, collation)
     
 
 
@@ -185,12 +192,18 @@ class DorisTypeCompiler(MySQLTypeCompiler):
         res = self.visit_DORIS_STRING(type_, **kw)
         return res
     
+    
     def visit_string(self, type_, **kw):
         return self.visit_DORIS_STRING(type_, **kw)
     
-    def visit_DORIS_STRING(self, type_: STRING, **kw):
+    
+    def visit_DORIS_STRING(self, type_: String|STRING, **kw):
         if type_.length is not None:
-            return self._extend_string(type_, {}, "STRING(%d)" % type_.length)
+            if isinstance(type_, STRING):
+                _name = 'VARCHAR' if type_._as_varchar else 'STRING'
+            else:
+                _name = 'VARCHAR'
+            return self._extend_string(type_, {}, "{}({})".format(_name, type_.length))
         else:
             return self._extend_string(type_, {}, "STRING")
 
