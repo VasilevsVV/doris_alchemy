@@ -16,20 +16,32 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from abc import ABC, abstractmethod
+import base64
 import json
 import logging
 import re
-from typing import Callable, Generic, Iterable, Optional, List, Any, Sequence, Type, Dict, TypeVar
-from sqlalchemy import Boolean, Dialect, Numeric, Integer, Float, String, exc
+from abc import ABC, abstractmethod
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+)
+
+import sqlalchemy.dialects.mysql as mysql
+from sqlalchemy import Boolean, Dialect, Float, Integer, Numeric, String, exc
 from sqlalchemy.dialects.mysql.base import MySQLTypeCompiler
 from sqlalchemy.sql import sqltypes
 from sqlalchemy.sql.type_api import TypeEngine
-import base64
-# import sqlalchemy.types as sqltypes
 
-from doris_alchemy.util import ensure_sequence
-from doris_alchemy.util import join_args_with_quote
+# import sqlalchemy.types as sqltypes
+from doris_alchemy.util import ensure_sequence, join_args_with_quote
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +118,7 @@ class STRING(sqltypes.Text):
 
 
 class ENUM(sqltypes.Enum):
+    # TODO: implement full support for ENUM
     __visit_name__ = 'DORIS_ENUM'
     
 
@@ -131,7 +144,7 @@ class ARRAY(sqltypes.ARRAY, Generic[T]):  # pylint: disable=no-init
         return __processor
 
 
-class MAP(TypeEngine):  # pylint: disable=no-init
+class MAP(TypeEngine):
     __visit_name__ = "MAP"
 
     @TypeEngine.python_type.getter
@@ -139,12 +152,17 @@ class MAP(TypeEngine):  # pylint: disable=no-init
         return dict
 
 
-class STRUCT(TypeEngine):  # pylint: disable=no-init
+class STRUCT(TypeEngine):
     __visit_name__ = "STRUCT"
 
     @TypeEngine.python_type.getter
     def python_type(self) -> Optional[Type[Any]]:
         return None
+
+
+class JSON(mysql.JSON):
+    # TODO: Implement full support for JSON
+    __visit_name__ = 'DORIS_JSON'
 
 
 
@@ -160,6 +178,10 @@ class DorisTypeCompiler(MySQLTypeCompiler):
     
     def visit_NUMERIC(self, type_, **kw):
         return self.visit_DECIMAL(type_, **kw)
+
+
+    def visit_DORIS_ENUM(self, type_, **kw):
+        return self._visit_enumerated_values("ENUM", type_, type_.enums)
 
     def _visit_enumerated_values(self, name, type_, enumerated_values: Sequence[str]):
         quoted_enums = []
@@ -206,6 +228,9 @@ class DorisTypeCompiler(MySQLTypeCompiler):
             return self._extend_string(type_, {}, "{}({})".format(_name, type_.length))
         else:
             return self._extend_string(type_, {}, "STRING")
+    
+    def visit_DORIS_JSON(self, type_, **kw):
+        return "JSON"
 
 
 _type_map = {
