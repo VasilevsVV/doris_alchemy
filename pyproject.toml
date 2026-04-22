@@ -11,7 +11,7 @@ maintainers = [
     {name = "vtsiura", email = "morfey.rulit@gmail.com"}
 ]
 
-version = "0.2.12"
+version = "0.2.13"
 
 description = "Apache Doris dialect for SQLAlchemy"
 readme = "README.md"
@@ -29,8 +29,8 @@ dependencies = [
     ]
 
 [project.urls]
-Homepage = "https://github.com/VasilevsVV/doris-alchemy"
-Issues = "https://github.com/VasilevsVV/doris-alchemy/issues"
+Homepage = "https://github.com/VasilevsVV/doris_alchemy"
+Issues = "https://github.com/VasilevsVV/doris_alchemy/issues"
 
 [project.optional-dependencies]
 mysqldb = ["mysqlclient>=2.1.0"]
