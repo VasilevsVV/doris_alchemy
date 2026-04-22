@@ -16,19 +16,32 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from abc import ABC, abstractmethod
+import base64
 import json
 import logging
 import re
-from typing import Callable, Generic, Iterable, Optional, List, Any, Sequence, Type, Dict, TypeVar
-from sqlalchemy import Boolean, Dialect, Numeric, Integer, Float, exc
+from abc import ABC, abstractmethod
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+)
+
+import sqlalchemy.dialects.mysql as mysql
+from sqlalchemy import Boolean, Dialect, Float, Integer, Numeric, String, exc
 from sqlalchemy.dialects.mysql.base import MySQLTypeCompiler
 from sqlalchemy.sql import sqltypes
 from sqlalchemy.sql.type_api import TypeEngine
-# import sqlalchemy.types as sqltypes
 
-from doris_alchemy.util import ensure_sequence
-from doris_alchemy.util import join_args_with_quote
+# import sqlalchemy.types as sqltypes
+from doris_alchemy.util import ensure_sequence, join_args_with_quote
 
 logger = logging.getLogger(__name__)
 
@@ -68,19 +81,44 @@ class AGG_STATE(Numeric):  # pylint: disable=no-init
 class BLOB(sqltypes.BLOB):
     __visit_name__ = 'DORIS_BLOB'
     
-    def bind_processor(self, dialect):
-        return super().bind_processor(dialect)
+    def __init__(self, length: Optional[int] = None,
+                 encoding: str = 'utf-8'):
+        self._encoding = encoding
+        super().__init__(length)
+    
+    def bind_processor(self, dialect: Dialect):
+        if dialect.name != 'doris':
+            return super().bind_processor(dialect)
+        def __processor(value: bytes) -> str:
+            assert isinstance(value, bytes)
+            res = base64.b85encode(value).decode(self._encoding)
+            return res  
+        return __processor
+    
     
     def result_processor(self, dialect, coltype):
-        return super().result_processor(dialect, coltype)
+        if dialect.name != 'doris':
+            return super().result_processor(dialect, coltype)
+        def __processor(value: str) -> bytes:
+            res = base64.b85decode(value)
+            return res
+        return __processor
 
 
 class STRING(sqltypes.Text):
     __visit_name__ = 'DORIS_STRING'
     
+    def __init__(self, 
+                 length: int | None = None,
+                 collation: str | None = None,
+                 as_varchar: bool = False):
+        self._as_varchar = as_varchar
+        super().__init__(length, collation)
+    
 
 
 class ENUM(sqltypes.Enum):
+    # TODO: implement full support for ENUM
     __visit_name__ = 'DORIS_ENUM'
     
 
@@ -88,13 +126,17 @@ class ARRAY(sqltypes.ARRAY, Generic[T]):  # pylint: disable=no-init
     __visit_name__ = "DORIS_ARRAY"
     
     def bind_processor(self, dialect: Dialect) -> Callable[[Any], str] | None: # type: ignore
+        if dialect.name != 'doris':
+            return super().bind_processor(dialect)
         def __processor(value: list) -> str:
             assert isinstance(value, Iterable), f'ARRAY value must be Iterable. Got: {value}'
             return json.dumps(value)
         return __processor
     
     
-    def result_processor(self, dialect: Dialect, coltype: object) -> Callable[[str], list] | None: # type: ignore
+    def result_processor(self, dialect: Dialect, coltype: object): # type: ignore
+        if dialect.name != 'doris':
+            return super().result_processor(dialect, coltype)
         def __processor(value: str):
             res = json.loads(value)
             assert isinstance(res, list)
@@ -102,7 +144,7 @@ class ARRAY(sqltypes.ARRAY, Generic[T]):  # pylint: disable=no-init
         return __processor
 
 
-class MAP(TypeEngine):  # pylint: disable=no-init
+class MAP(TypeEngine):
     __visit_name__ = "MAP"
 
     @TypeEngine.python_type.getter
@@ -110,12 +152,85 @@ class MAP(TypeEngine):  # pylint: disable=no-init
         return dict
 
 
-class STRUCT(TypeEngine):  # pylint: disable=no-init
+class STRUCT(TypeEngine):
     __visit_name__ = "STRUCT"
 
     @TypeEngine.python_type.getter
     def python_type(self) -> Optional[Type[Any]]:
         return None
+
+
+class JSON(mysql.JSON):
+    # TODO: Implement full support for JSON
+    __visit_name__ = 'DORIS_JSON'
+
+
+
+class DorisTypeCompiler(MySQLTypeCompiler):
+    def visit_DORIS_BOOLEAN(self, type_, **kw): # type: ignore
+        return "BOOLEAN"
+    
+    def visit_large_binary(self, type_, **kw):
+        return self.visit_DORIS_BLOB(type_)
+    
+    def visit_DORIS_BLOB(self, type_, **kw):
+        return "STRING"
+    
+    def visit_NUMERIC(self, type_, **kw):
+        return self.visit_DECIMAL(type_, **kw)
+
+
+    def visit_DORIS_ENUM(self, type_, **kw):
+        return self._visit_enumerated_values("ENUM", type_, type_.enums)
+
+    def _visit_enumerated_values(self, name, type_, enumerated_values: Sequence[str]):
+        quoted_enums = []
+        for e in enumerated_values:
+            if self.dialect.identifier_preparer._double_percents:
+                e = e.replace("%", "%%")
+            quoted_enums.append("'%s'" % e.replace("'", "''"))
+
+        max_length = 0
+        for e in quoted_enums:
+            assert isinstance(e, str)
+            if len(e) > max_length:
+                max_length = len(e)
+
+        if len(enumerated_values) > 0 and max_length > 0:
+            return self._extend_string(type_, {}, "VARCHAR(%d)" % max_length)
+        else:
+            raise exc.CompileError(
+                f'ENUM requires more than one Value with length > 0. Got: {enumerated_values}'
+            )
+    
+    def visit_BITMAP(self, type_):
+        return 'BITMAP'
+    
+    def visit_DORIS_ARRAY(self, type_: ARRAY):
+        return f'ARRAY <{type_.item_type.compile()}>'
+    
+    
+    def visit_TEXT(self, type_, **kw):
+        res = self.visit_DORIS_STRING(type_, **kw)
+        return res
+    
+    
+    def visit_string(self, type_, **kw):
+        return self.visit_DORIS_STRING(type_, **kw)
+    
+    
+    def visit_DORIS_STRING(self, type_: String|STRING, **kw):
+        if type_.length is not None:
+            if isinstance(type_, STRING):
+                _name = 'VARCHAR' if type_._as_varchar else 'STRING'
+            else:
+                _name = 'VARCHAR'
+            return self._extend_string(type_, {}, "{}({})".format(_name, type_.length))
+        else:
+            return self._extend_string(type_, {}, "STRING")
+    
+    def visit_DORIS_JSON(self, type_, **kw):
+        return "JSON"
 
 
 _type_map = {
@@ -217,56 +332,3 @@ class RANDOM(RenderedMixin):
 # ============================================================================
 #           TYPE COMPILER
 
-class DorisTypeCompiler(MySQLTypeCompiler):
-    def visit_DORIS_BOOLEAN(self, type_, **kw): # type: ignore
-        return "BOOLEAN"
-    
-    def visit_large_binary(self, type_, **kw):
-        return self.visit_DORIS_BLOB(type_)
-    
-    def visit_DORIS_BLOB(self, type_, **kw):
-        return "STRING"
-    
-    def visit_NUMERIC(self, type_, **kw):
-        return self.visit_DECIMAL(type_, **kw)
-
-    def _visit_enumerated_values(self, name, type_, enumerated_values: Sequence[str]):
-        quoted_enums = []
-        for e in enumerated_values:
-            if self.dialect.identifier_preparer._double_percents:
-                e = e.replace("%", "%%")
-            quoted_enums.append("'%s'" % e.replace("'", "''"))
-
-        max_length = 0
-        for e in quoted_enums:
-            assert isinstance(e, str)
-            if len(e) > max_length:
-                max_length = len(e)
-
-        if len(enumerated_values) > 0 and max_length > 0:
-            return self._extend_string(type_, {}, "VARCHAR(%d)" % max_length)
-        else:
-            raise exc.CompileError(
-                f'ENUM requires more than one Value with length > 0. Got: {enumerated_values}'
-            )
-    
-    def visit_BITMAP(self, type_):
-        return 'BITMAP'
-    
-    def visit_DORIS_ARRAY(self, type_: ARRAY):
-        return f'ARRAY <{type_.item_type.compile()}>'
-    
-    
-    def visit_TEXT(self, type_, **kw):
-        res = self.visit_DORIS_STRING(type_, **kw)
-        print(res)
-        return res
-    
-    def visit_string(self, type_, **kw):
-        return self.visit_DORIS_STRING(type_, **kw)
-    
-    def visit_DORIS_STRING(self, type_: STRING, **kw):
-        if type_.length is not None:
-            return self._extend_string(type_, {}, "STRING(%d)" % type_.length)
-        else:
-            return self._extend_string(type_, {}, "STRING")
