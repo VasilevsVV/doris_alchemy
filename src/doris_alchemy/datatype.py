@@ -231,9 +231,17 @@ class DorisTypeCompiler(MySQLTypeCompiler):
     
     def visit_DORIS_JSON(self, type_, **kw):
         return "JSON"
+    
+
+    def visit_FLOAT(self, type_: mysql.FLOAT, **kw: Any) -> str:  # type: ignore[override]  # NOQA: E501
+        if type_.precision is not None:
+            if type_.precision <= 23:
+                return 'FLOAT'
+            return 'DOUBLE'
+        return "FLOAT"
 
 
-_type_map = {
+PARSING_TYPE_MAP = {
     # === Boolean ===
     "boolean": sqltypes.BOOLEAN,
     "bool": sqltypes.BOOLEAN,
@@ -280,10 +288,10 @@ def parse_sqltype(type_str: str) -> TypeEngine:
         return sqltypes.NULLTYPE
     type_name = match.group("type")
 
-    if type_name not in _type_map:
+    if type_name not in PARSING_TYPE_MAP:
         logger.warning(f"Did not recognize type '{type_name}'")
         return sqltypes.NULLTYPE
-    type_class = _type_map[type_name]
+    type_class = PARSING_TYPE_MAP[type_name]
     return type_class()
 
 
