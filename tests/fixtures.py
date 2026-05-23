@@ -15,7 +15,7 @@ def make_doris_engine():
     with tmp_eng.connect() as c:
         c.execute(text(f'CREATE DATABASE IF NOT EXISTS {database};'))
 
-    engine = create_engine(f"doris://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4")
+    engine = create_engine(f"doris://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4", echo=True)
 
     return engine
 
