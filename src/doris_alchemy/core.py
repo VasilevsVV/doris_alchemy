@@ -19,8 +19,9 @@ class DorisDialect_mysqldb(DorisDialectMixin, MySQLDialect_mysqldb): # type: ign
 
 
 try:
-    # using MySQLdb as default driver if available
-    DorisDialect = DorisDialect_mysqldb
+    # using pymysql as default driver if available
+    DorisDialect = DorisDialect_pymysql
+    
 
 except ModuleNotFoundError:
-    DorisDialect = DorisDialect_pymysql
+    DorisDialect = DorisDialect_mysqldb
