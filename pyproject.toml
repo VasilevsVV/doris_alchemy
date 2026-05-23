@@ -11,7 +11,7 @@ maintainers = [
     {name = "vtsiura", email = "morfey.rulit@gmail.com"}
 ]
 
-version = "0.2.13"
+version = "0.2.14"
 
 description = "Apache Doris dialect for SQLAlchemy"
 readme = "README.md"
@@ -35,9 +35,40 @@ Issues = "https://github.com/VasilevsVV/doris_alchemy/issues"
 [project.optional-dependencies]
 mysqldb = ["mysqlclient>=2.1.0"]
 pymysql = ["pymysql"]
+test = [
+    "pytest",
+    "pandas"
+]
+publish = [
+    "twine",
+    "build",
+    "bumpversion"
+]
 
 
 [project.entry-points."sqlalchemy.dialects"]
 doris = "doris_alchemy.dialect:DorisDialect"
 'doris.pymysql' = "doris_alchemy.dialect:DorisDialect"
 'doris.mysqldb' = "doris_alchemy.dialect:DorisDialect_mysqldb"
+
+
+# =================================================================
+#           TESTING
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+
+pythonpath = [
+    "trent"
+]
+testpaths = [
+    "test"
+]
+python_files = [
+    'test_*.py', 
+    '*_test.py'
+]
+python_functions = [
+    'test_*',
+    '*_test'
+    ]

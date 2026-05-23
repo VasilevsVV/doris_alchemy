@@ -110,6 +110,14 @@ class DorisDDLCompiler(MySQLDDLCompiler):
             if 'DISTRIBUTED_BY' not in opts:
                 opts['DISTRIBUTED_BY'] = HASH(pk_key)
 
+        if (
+            'PROPERTIES' not in opts 
+            or 'replication_allocation' not in opts['PROPERTIES'] 
+        ):
+            props = opts.get('PROPERTIES', {})
+            props['replication_allocation'] = "tag.location.default: 1"
+            opts['PROPERTIES'] = props
+
 
         sorted_opts = topological.sort(TABLE_PROPERTIES_SORT_TUPLES, opts)
         for opt in sorted_opts:
